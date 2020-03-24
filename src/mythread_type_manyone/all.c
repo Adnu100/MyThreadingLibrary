@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <sched.h>
 #include <unistd.h>
-#include "pthread.h"
+#include "mythread.h"
 
 struct __mythread_struct **__allthreads[16] = {0};
 int totalthreadcount = 0;

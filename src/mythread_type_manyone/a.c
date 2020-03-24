@@ -1,13 +1,13 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
-#include <setjmp.h>
+#include <ucontext.h>
 
-jmp_buf b1, b2;
+ucontext_t context1, context2;
 int cur = 0;
 
 void handlesig(int sig) {
-	fprintf(stderr, "In handlesig\n");
+	/*fprintf(stderr, "In handlesig\n");
 	signal(SIGALRM, handlesig);
 	if(!cur) {
 		cur = 1;
@@ -18,11 +18,27 @@ void handlesig(int sig) {
 		cur = 0;
 		setjmp(b1);
 		longjmp(b2, 1);
+	}*/
+	if(cur) {
+		puts("changing to fun()");
+		cur = !cur;
+		getcontext(&context2);
+		puts("saved 2");
+		if(cur == 0)
+			setcontext(&context1);
 	}
+	else {
+		puts("changing to main()");
+		cur = !cur;
+		puts("saved 1");
+		getcontext(&context1);
+		if(cur == 1)
+			setcontext(&context2);
+	}
+	puts("OUT OF SIGNAL HANDLER");
 }
 
 void fun() {	
-	signal(SIGALRM, handlesig);
 	while(1) {
 		printf("I am in function fun()\n");
 		for(int x = 0; x < 100000000; x++)
@@ -33,16 +49,16 @@ void fun() {
 int main() {	
 	signal(SIGALRM, handlesig);
 	ualarm(900000, 900000);						//send SIGALRM after each 900000 microseconds
-	if(!setjmp(b1))
-		fun();									//will be run when setjmp returns 0
-	signal(SIGALRM, SIG_DFL);
-	signal(SIGALRM, handlesig);
-	ualarm(900000, 900000);						//send SIGALRM after each 900000 microseconds
-	while(1) {						
-		printf("I am in function main()\n");	//will be run when setjmp returns 1
-		for(int x = 0; x < 100000000; x++)
-			//printf("main: %d\n", x);
-			;
+	getcontext(&context2);
+	if(cur == 0) {
+		fun();	
+	}		//will be run when setjmp returns 0
+	else {
+		while(1) {						
+			printf("I am in function main()\n");	//will be run when setjmp returns 1
+			for(int x = 0; x < 100000000; x++)
+				;
+		}
 	}
 	return 0;
 }
