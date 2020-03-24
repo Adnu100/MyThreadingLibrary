@@ -14,6 +14,9 @@
 static struct mythread_struct **__allthreads[16] = {0};
 static int __ind = 0;
 
+static void signal_handler(int sig) {
+}
+
 /* wrapper function of type int (*f)(void *) which wraps the function
  * of type void *(*f)(void *) in it so that it can be passed to 
  * clone() call.
@@ -21,7 +24,12 @@ static int __ind = 0;
  */
 int __mythread_wrapper(void *mythread_struct_cur) {
 	((struct mythread_struct *)mythread_struct_cur)->returnval = ((struct mythread_struct *)mythread_struct_cur)->fun(((struct mythread_struct *)mythread_struct_cur)->args);
-	((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
+	if(((struct mythread_struct *)mythread_struct_cur)->state == THREAD_JOIN_CALLED) {
+		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
+		kill(((struct mythread_struct *)mythread_struct_cur)->jpid, SIGUSR1);
+	}
+	else
+		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
 	return 0;
 }
 
@@ -64,7 +72,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	int status;
 	struct mythread_struct *t = __mythread_fill(fun, args);
 	t->state = THREAD_RUNNING;
-	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), CLONE_THREAD | CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
+	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
 	if(status == -1) {
 		__mythread_removelastfilled();
 		return -1;
@@ -83,6 +91,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
  */
 int mythread_join(mythread_t mythread, void **returnval) {
 	int cur, locind, status;
+	sighandler_t prev;
 	mythread--;
 	cur = mythread / 16;
 	locind = mythread % 16;
@@ -99,9 +108,12 @@ int mythread_join(mythread_t mythread, void **returnval) {
 				status = 0;
 				break;
 			case THREAD_RUNNING:
+				__allthreads[cur][locind]->jpid = getpid();
 				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
+				prev = signal(SIGUSR1, signal_handler);
 				while(__allthreads[cur][locind]->state != THREAD_TERMINATED)
-					;
+					pause();
+				signal(SIGUSR1, prev);
 				__allthreads[cur][locind]->state = THREAD_COLLECTED;
 				if(returnval)
 					*returnval = __allthreads[cur][locind]->returnval;
@@ -115,4 +127,14 @@ int mythread_join(mythread_t mythread, void **returnval) {
 	}
 	else 
 		return ESRCH;
+}
+
+int mythread_kill(mythread_t mythread, int sig) {
+	int cur, locind, status;
+	cur = mythread / 16;
+	locind = mythread % 16;
+	status = kill(__allthreads[cur][locind]->tid, SIGINT);
+	if(!status)
+		__allthreads[cur][locind]->state = THREAD_KILLED;
+	return status;
 }
