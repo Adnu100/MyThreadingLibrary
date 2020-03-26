@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <setjmp.h>
 #include "mythread.h"
 
 static struct mythread_struct **__allthreads[16] = {0};
@@ -23,6 +24,7 @@ static void signal_handler(int sig) {
  * It also stores the returned value in the mythread_struct
  */
 int __mythread_wrapper(void *mythread_struct_cur) {
+	printf("__ind = %d, PID_T :%d\n", __ind, getpid());
 	((struct mythread_struct *)mythread_struct_cur)->returnval = ((struct mythread_struct *)mythread_struct_cur)->fun(((struct mythread_struct *)mythread_struct_cur)->args);
 	if(((struct mythread_struct *)mythread_struct_cur)->state == THREAD_JOIN_CALLED) {
 		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
@@ -50,6 +52,8 @@ void __mythread_removelastfilled(void) {
 struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	int cur = __ind / 16;
 	int locind = __ind % 16;
+	if(!cur && !locind)
+		signal(SIGUSR1, signal_handler);
 	if(!__allthreads[cur])
 		__allthreads[cur] = (struct mythread_struct **)malloc(sizeof(struct mythread_struct *) * 16);
 	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
@@ -91,12 +95,22 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
  */
 int mythread_join(mythread_t mythread, void **returnval) {
 	int cur, locind, status;
-	sighandler_t prev;
 	mythread--;
 	cur = mythread / 16;
 	locind = mythread % 16;
 	if(mythread < __ind) {
+		printf("%d\n", __allthreads[cur][locind]->state);
 		switch(__allthreads[cur][locind]->state) {
+			case THREAD_RUNNING:
+				__allthreads[cur][locind]->jpid = getpid();
+				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
+				while(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED)
+					pause();
+				__allthreads[cur][locind]->state = THREAD_COLLECTED;
+				if(returnval)
+					*returnval = __allthreads[cur][locind]->returnval;
+				status = 0;
+				break;
 			case THREAD_NOT_STARTED: 
 			case THREAD_JOIN_CALLED: 
 			case THREAD_COLLECTED:
@@ -104,18 +118,6 @@ int mythread_join(mythread_t mythread, void **returnval) {
 				break;
 			case THREAD_TERMINATED:
 				if(returnval) 
-					*returnval = __allthreads[cur][locind]->returnval;
-				status = 0;
-				break;
-			case THREAD_RUNNING:
-				__allthreads[cur][locind]->jpid = getpid();
-				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
-				prev = signal(SIGUSR1, signal_handler);
-				while(__allthreads[cur][locind]->state != THREAD_TERMINATED)
-					pause();
-				signal(SIGUSR1, prev);
-				__allthreads[cur][locind]->state = THREAD_COLLECTED;
-				if(returnval)
 					*returnval = __allthreads[cur][locind]->returnval;
 				status = 0;
 				break;
@@ -131,10 +133,34 @@ int mythread_join(mythread_t mythread, void **returnval) {
 
 int mythread_kill(mythread_t mythread, int sig) {
 	int cur, locind, status;
+	mythread--;
 	cur = mythread / 16;
 	locind = mythread % 16;
-	status = kill(__allthreads[cur][locind]->tid, SIGINT);
-	if(!status)
-		__allthreads[cur][locind]->state = THREAD_KILLED;
+	status = kill(__allthreads[cur][locind]->tid, sig);
 	return status;
+}
+
+void mythread_exit(void *returnval) {
+	pid_t pid = getpid();
+	int i, cur, locind;
+	for(i = 0; i < __ind; i++) {
+		cur = i / 16;
+		locind = i % 16;
+		if(__allthreads[cur][locind]->tid == pid)
+			break;
+	}
+	if(i == __ind)
+		return;
+	__allthreads[cur][locind]->returnval = returnval;
+	if(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED) {
+		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+		kill(__allthreads[cur][locind]->jpid, SIGUSR1);
+	}
+	else
+		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+	exit(0);
+}
+
+void __mythread_exit(struct mythread_struct *mythread_struct_cur, void *returnval) {
+	mythread_struct_cur->returnval = returnval;
 }
