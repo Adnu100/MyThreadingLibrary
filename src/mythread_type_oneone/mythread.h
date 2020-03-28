@@ -1,16 +1,16 @@
 /* 
  * Mythread C threading library
- * This is an implementation of user level and kernel 
+ * This is an implementation of kernel 
  * level one-one threads in C 
  * 
  */
 
-#include <setjmp.h>
-#include <bits/types.h>
-
 #ifndef MYTHREAD_H
 
 #define MYTHREAD_H
+
+#include <setjmp.h>
+#include <bits/types.h>
 
 #define STACK_SIZE (1024 * 1024)
 

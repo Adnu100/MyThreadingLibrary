@@ -2,14 +2,11 @@
 #define _GNU_SOURCE
 #endif
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <sched.h>
 #include <errno.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <setjmp.h>
 #include "mythread.h"
 
 static struct mythread_struct **__allthreads[16] = {0};
@@ -24,7 +21,6 @@ static void signal_handler(int sig) {
  * It also stores the returned value in the mythread_struct
  */
 int __mythread_wrapper(void *mythread_struct_cur) {
-	printf("__ind = %d, PID_T :%d\n", __ind, getpid());
 	((struct mythread_struct *)mythread_struct_cur)->returnval = ((struct mythread_struct *)mythread_struct_cur)->fun(((struct mythread_struct *)mythread_struct_cur)->args);
 	if(((struct mythread_struct *)mythread_struct_cur)->state == THREAD_JOIN_CALLED) {
 		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
@@ -99,7 +95,6 @@ int mythread_join(mythread_t mythread, void **returnval) {
 	cur = mythread / 16;
 	locind = mythread % 16;
 	if(mythread < __ind) {
-		printf("%d\n", __allthreads[cur][locind]->state);
 		switch(__allthreads[cur][locind]->state) {
 			case THREAD_RUNNING:
 				__allthreads[cur][locind]->jpid = getpid();
