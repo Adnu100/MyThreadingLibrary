@@ -71,6 +71,8 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	int status;
 	struct mythread_struct *t = __mythread_fill(fun, args);
+	if(!t)
+		return -1;
 	t->state = THREAD_RUNNING;
 	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
 	if(status == -1) {

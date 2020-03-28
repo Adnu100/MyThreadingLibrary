@@ -6,10 +6,11 @@
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
+#include <ucontext.h>
 #include "mythread.h"
 
-
 static struct mythread_struct **__allthreads[16] = {0};
+static ucontext_t maincontext;
 static int __ind;
 
 /* if any error occures, then this function removes the newly allocated
@@ -34,12 +35,32 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
 	__allthreads[cur][locind]->fun = fun;
 	__allthreads[cur][locind]->args = args;
+	getcontext(&(__allthreads[cur][locind]->thread_context));
+	__allthreads[cur][locind]->thread_context.uc_stack.ss_sp = malloc(STACK_SIZE);
+	__allthreads[cur][locind]->thread_context.uc_stack.ss_size = STACK_SIZE;
+	__allthreads[cur][locind]->thread_context.uc_link = &maincontext;
 	__allthreads[cur][locind]->returnval = NULL;
 	__allthreads[cur][locind]->state = THREAD_NOT_STARTED;
 	__ind++;
 	return __allthreads[cur][locind];
 }
 
+long fun(int a, int b) {                                                                                                                             
+	long int x;
+	x = a;
+	x <<= 32;
+	x += b;
+	return x;
+}
+
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
+	struct mythread_struct *t = __mythread_fill(fun, args);
+	if(t)
+		t->state = THREAD_RUNNING;
+	else
+		return -1;
+	makecontext(&(t->thread_context), __mythread_wrapper, 0);
+	//makecontext(&(t->thread_context), __mythread_wrapper, 2, (int)(((long int)args) << 32), ((int)((long int)args)));
+	*mythread = __ind;
 	return 0;
 }

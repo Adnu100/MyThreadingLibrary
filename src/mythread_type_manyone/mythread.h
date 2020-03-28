@@ -29,7 +29,7 @@ struct mythread_struct {
 	void *returnval;
 };
 
-int __mythread_wrapper(void *mythread_struct_cur);
+void __mythread_wrapper(int ptr1, int ptr2);
 void __mythreadfill(void *(*fun)(void *), void *args);
 
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
