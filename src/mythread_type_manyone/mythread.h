@@ -22,14 +22,14 @@
 typedef unsigned long mythread_t;
 
 struct mythread_struct {
-	int state;
+	int state, lock;
 	ucontext_t thread_context;
 	void *(*fun)(void *);
 	void *args;
 	void *returnval;
 };
 
-void __mythread_wrapper(int ptr1, int ptr2);
+void __mythread_wrapper(int ind);
 void __mythreadfill(void *(*fun)(void *), void *args);
 
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);

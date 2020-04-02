@@ -13,6 +13,26 @@ static struct mythread_struct **__allthreads[16] = {0};
 static ucontext_t maincontext;
 static int __ind;
 
+/* wrapper function of type void (*f)(int) which is needed to be type
+ * casted in the form void (*f)(void) and passed to makecontext
+ * function
+ * it invokes the function of the thread, also stores the returned
+ * value in the mythread_struct
+ */
+void __mythread_wrapper(int ind) {
+	ind--;
+	int cur = ind / 16;
+	int locind = ind % 16;
+	mythread_struct *t = __allthreads[cur][locind];
+	t->returnval = t->fun(t->args);
+	ind--;
+	if(ind >= 0) {
+		cur = ind / 16;
+		locind = ind % 16;
+		__allthreads[cur][locind]->thread_context.uc_link = t->thread_context.uc_link;
+	}
+}
+
 /* if any error occures, then this function removes the newly allocated
  * thread and decrements the index __ind by one 
  */
@@ -45,22 +65,19 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	return __allthreads[cur][locind];
 }
 
-long fun(int a, int b) {                                                                                                                             
-	long int x;
-	x = a;
-	x <<= 32;
-	x += b;
-	return x;
-}
-
+/* creates a many one thread and starts it for given function and given
+ * argument (fun and args)
+ * it returns 0 on success and -1 on error
+ * the thread id is stored in the location pointed by mythread
+ * if any error occures, it frees the allocated structure
+ */
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	struct mythread_struct *t = __mythread_fill(fun, args);
 	if(t)
 		t->state = THREAD_RUNNING;
 	else
 		return -1;
-	makecontext(&(t->thread_context), __mythread_wrapper, 0);
-	//makecontext(&(t->thread_context), __mythread_wrapper, 2, (int)(((long int)args) << 32), ((int)((long int)args)));
+	makecontext(&(t->thread_context), (void (*)())__mythread_wrapper, 1, __ind);
 	*mythread = __ind;
 	return 0;
 }

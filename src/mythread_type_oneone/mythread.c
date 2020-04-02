@@ -11,14 +11,24 @@
 
 static struct mythread_struct **__allthreads[16] = {0};
 static int __ind = 0;
+static volatile int superlock = 0;
 
 static void signal_handler(int sig) {
+}
+
+static void superlock_lock() {
+	while(__sync_lock_test_and_set(&superlock, 1));
+}
+
+static void superlock_unlock() {
+	__sync_synchronize();
+	superlock = 0;
 }
 
 /* wrapper function of type int (*f)(void *) which wraps the function
  * of type void *(*f)(void *) in it so that it can be passed to 
  * clone() call.
- * It also stores the returned value in the mythread_struct
+ * it also stores the returned value in the mythread_struct
  */
 int __mythread_wrapper(void *mythread_struct_cur) {
 	((struct mythread_struct *)mythread_struct_cur)->returnval = ((struct mythread_struct *)mythread_struct_cur)->fun(((struct mythread_struct *)mythread_struct_cur)->args);
@@ -70,7 +80,9 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
  */
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	int status;
-	struct mythread_struct *t = __mythread_fill(fun, args);
+	struct mythread_struct *t;
+	superlock_lock();
+   	t = __mythread_fill(fun, args);
 	if(!t)
 		return -1;
 	t->state = THREAD_RUNNING;
@@ -82,6 +94,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	else
 		t->tid = status;
 	*mythread = __ind;
+	superlock_unlock();
 	return 0;
 }
 
@@ -99,11 +112,15 @@ int mythread_join(mythread_t mythread, void **returnval) {
 	if(mythread < __ind) {
 		switch(__allthreads[cur][locind]->state) {
 			case THREAD_RUNNING:
+				superlock_lock();
 				__allthreads[cur][locind]->jpid = getpid();
 				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
+				superlock_unlock();
 				while(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED)
 					pause();
+				superlock_lock();
 				__allthreads[cur][locind]->state = THREAD_COLLECTED;
+				superlock_unlock();
 				if(returnval)
 					*returnval = __allthreads[cur][locind]->returnval;
 				status = 0;
@@ -148,6 +165,7 @@ void mythread_exit(void *returnval) {
 	}
 	if(i == __ind)
 		return;
+	superlock_lock();
 	__allthreads[cur][locind]->returnval = returnval;
 	if(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED) {
 		__allthreads[cur][locind]->state = THREAD_TERMINATED;
@@ -155,9 +173,7 @@ void mythread_exit(void *returnval) {
 	}
 	else
 		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+	superlock_unlock();
 	exit(0);
 }
 
-void __mythread_exit(struct mythread_struct *mythread_struct_cur, void *returnval) {
-	mythread_struct_cur->returnval = returnval;
-}
