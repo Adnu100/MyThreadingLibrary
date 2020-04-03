@@ -3,18 +3,16 @@
 #endif
 
 #include <stdlib.h>
-#include <signal.h>
 #include <sched.h>
 #include <errno.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include "mythread.h"
 
 static struct mythread_struct **__allthreads[16] = {0};
 static int __ind = 0;
 static volatile int superlock = 0;
-
-static void signal_handler(int sig) {
-}
 
 static inline void superlock_lock() {
 	while(__sync_lock_test_and_set(&superlock, 1));
@@ -32,12 +30,9 @@ static inline void superlock_unlock() {
  */
 int __mythread_wrapper(void *mythread_struct_cur) {
 	((struct mythread_struct *)mythread_struct_cur)->returnval = ((struct mythread_struct *)mythread_struct_cur)->fun(((struct mythread_struct *)mythread_struct_cur)->args);
-	if(((struct mythread_struct *)mythread_struct_cur)->state == THREAD_JOIN_CALLED) {
-		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
-		kill(((struct mythread_struct *)mythread_struct_cur)->jpid, SIGUSR1);
-	}
-	else
-		((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
+	superlock_lock();
+	((struct mythread_struct *)mythread_struct_cur)->state = THREAD_TERMINATED;
+	superlock_unlock();
 	return 0;
 }
 
@@ -58,8 +53,6 @@ void __mythread_removelastfilled(void) {
 struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	int cur = __ind / 16;
 	int locind = __ind % 16;
-	if(!cur && !locind)
-		signal(SIGUSR1, signal_handler);
 	if(!__allthreads[cur])
 		__allthreads[cur] = (struct mythread_struct **)malloc(sizeof(struct mythread_struct *) * 16);
 	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
@@ -86,7 +79,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	if(!t)
 		return -1;
 	t->state = THREAD_RUNNING;
-	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
+	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), SIGCHLD | CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
 	if(status == -1) {
 		__mythread_removelastfilled();
 		return -1;
@@ -105,7 +98,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
  * in the location pointed by function which was running by the thread
  */
 int mythread_join(mythread_t mythread, void **returnval) {
-	int cur, locind, status;
+	int cur, locind, status, wstatus;
 	mythread--;
 	cur = mythread / 16;
 	locind = mythread % 16;
@@ -116,8 +109,11 @@ int mythread_join(mythread_t mythread, void **returnval) {
 				__allthreads[cur][locind]->jpid = getpid();
 				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
 				superlock_unlock();
-				while(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED)
-					pause();
+				while(1) {
+					waitpid(__allthreads[cur][locind]->tid, &wstatus, 0);
+					if(WIFEXITED(wstatus))
+						break;
+				}
 				superlock_lock();
 				__allthreads[cur][locind]->state = THREAD_COLLECTED;
 				superlock_unlock();

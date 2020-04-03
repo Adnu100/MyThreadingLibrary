@@ -12,6 +12,7 @@
 #include <setjmp.h>
 #include <bits/types.h>
 
+#define SMALL_STACK_SIZE (10240)
 #define STACK_SIZE (1024 * 1024)
 
 #define THREAD_RUNNING 0x0
