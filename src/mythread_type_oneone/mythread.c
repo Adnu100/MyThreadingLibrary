@@ -170,12 +170,7 @@ void mythread_exit(void *returnval) {
 		return;
 	superlock_lock();
 	__allthreads[cur][locind]->returnval = returnval;
-	if(__allthreads[cur][locind]->state == THREAD_JOIN_CALLED) {
-		__allthreads[cur][locind]->state = THREAD_TERMINATED;
-		kill(__allthreads[cur][locind]->jpid, SIGUSR1);
-	}
-	else
-		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+	__allthreads[cur][locind]->state = THREAD_TERMINATED;
 	superlock_unlock();
 	exit(0);
 }
