@@ -16,11 +16,11 @@ static volatile int superlock = 0;
 static void signal_handler(int sig) {
 }
 
-static void superlock_lock() {
+static inline void superlock_lock() {
 	while(__sync_lock_test_and_set(&superlock, 1));
 }
 
-static void superlock_unlock() {
+static inline void superlock_unlock() {
 	__sync_synchronize();
 	superlock = 0;
 }
@@ -145,6 +145,9 @@ int mythread_join(mythread_t mythread, void **returnval) {
 		return ESRCH;
 }
 
+/* sends signal sig to the thread represented by
+ * mythread_t mythread
+ */
 int mythread_kill(mythread_t mythread, int sig) {
 	int cur, locind, status;
 	mythread--;
@@ -154,6 +157,10 @@ int mythread_kill(mythread_t mythread, int sig) {
 	return status;
 }
 
+/* when called, the calling thread exits, if returnval is not 
+ * NULL, then the value returned by thread is stored in the location pointed 
+ * by returnval
+ */
 void mythread_exit(void *returnval) {
 	pid_t pid = getpid();
 	int i, cur, locind;
@@ -177,3 +184,40 @@ void mythread_exit(void *returnval) {
 	exit(0);
 }
 
+/* initialises the mythread_spinlock_t pointed by lock
+ */
+int mythread_spin_init(mythread_spinlock_t *lock) {
+	*lock = 0;
+	return 0;
+}
+
+/* aquires the lock on mythread_spinlock_t pointed by lock, 
+ * if the lock is already held by another thread, then it continuously
+ * loops until lock is freed again
+ */
+int inline mythread_spin_lock(mythread_spinlock_t *lock) {
+	if(*lock != 0 || *lock != 1)
+		return EINVAL;
+	while(__sync_lock_test_and_set(lock, 1));
+	return 0;
+}
+
+/* frees the mythread_spinlock_t pointed by lock
+ */
+int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
+	if(*lock != 1)
+		return EINVAL;
+	__sync_synchronize();
+	*lock = 0;
+	return 0;
+}
+
+/* same as mythread_spin_lock with the difference that if the lock is 
+ * held by some another thread, it returns immediately with the error
+ * number EBUSY
+ */
+int inline mythread_spin_trylock(mythread_spinlock_t *lock) {
+	if(__sync_lock_test_and_set(lock, 1))
+		return EBUSY;
+	return 0;
+}

@@ -22,7 +22,8 @@
 
 #define pid_t __pid_t
 
-typedef unsigned long mythread_t;
+typedef unsigned long int mythread_t;
+typedef unsigned short int mythread_spinlock_t;
 
 struct mythread_struct {
 	int tid, state;
