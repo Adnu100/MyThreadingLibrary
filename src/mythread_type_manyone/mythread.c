@@ -11,7 +11,63 @@
 
 static struct mythread_struct **__allthreads[16] = {0};
 static ucontext_t maincontext;
-static int __ind;
+static int __ind = 0, __current = 0;
+static struct active_thread_node *active = NULL, *mainthread = NULL, *previous = NULL;
+static volatile int superlock = 0;
+
+static inline void superlock_lock() {
+	while(__sync_lock_test_and_set(&superlock, 1));
+}
+
+static inline void superlock_unlock() {
+	__sync_synchronize();
+	superlock = 0;
+}
+
+static inline short int superlock_trylock() {
+	if(__sync_lock_test_and_set(&superlock, 1))
+		return 0;
+	return 1;
+}
+
+#include <stdio.h>
+void putactive() {
+	printf("active: %ld, %ld, %ld %ld\n", active->thread, active->next->thread, active->next->next->thread, active->next->next->next->thread);
+}
+
+/* this function will be invoked after every alarm sent to program
+ * this changes the current context between active thread and the 
+ * thread next to it
+ */
+void nextthread(int sig) {
+	if(sig == SIGALRM && __current > 1 && superlock_trylock()) {
+		previous = active;
+		active = active->next;
+		superlock_unlock();
+		swapcontext(previous->c, active->c);
+	}
+	else {
+		printf("TRYLOCK FAILED\n");
+	}
+}
+
+/* this initialisation function is needed to be called 
+ * before creating any thread and calling any other thread
+ * functions on that thread
+ * this function does the necessary setup and sets custom 
+ * alarm by ualarm()
+ */
+void mythread_init() {
+	active = (struct active_thread_node *)malloc(sizeof(struct active_thread_node));
+	active->thread = 0;
+	active->c = &maincontext;
+	previous = active;
+	active->next = active;
+	__current = 1;
+	mainthread = active;
+	signal(SIGALRM, nextthread);	
+	ualarm(50000, 50000);
+}
 
 /* wrapper function of type void (*f)(int) which is needed to be type
  * casted in the form void (*f)(void) and passed to makecontext
@@ -21,15 +77,21 @@ static int __ind;
  */
 void __mythread_wrapper(int ind) {
 	ind--;
-	int cur = ind / 16;
-	int locind = ind % 16;
-	mythread_struct *t = __allthreads[cur][locind];
-	t->returnval = t->fun(t->args);
-	ind--;
+	int cur = ind / 16, locind = ind % 16;
+	__allthreads[cur][locind]->returnval = __allthreads[cur][locind]->fun(__allthreads[cur][locind]->args);
 	if(ind >= 0) {
-		cur = ind / 16;
-		locind = ind % 16;
-		__allthreads[cur][locind]->thread_context.uc_link = t->thread_context.uc_link;
+		superlock_lock();
+		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+		if(__current > 1)
+			__allthreads[cur][locind]->thread_context.uc_link = active->next->c;
+		else
+			__allthreads[cur][locind]->thread_context.uc_link = NULL;
+		if(previous) {
+			free(previous->next);
+			previous->next = active->next;
+			__current--;
+		}
+		superlock_unlock();
 	}
 }
 
@@ -58,7 +120,6 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	getcontext(&(__allthreads[cur][locind]->thread_context));
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_sp = malloc(STACK_SIZE);
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_size = STACK_SIZE;
-	__allthreads[cur][locind]->thread_context.uc_link = &maincontext;
 	__allthreads[cur][locind]->returnval = NULL;
 	__allthreads[cur][locind]->state = THREAD_NOT_STARTED;
 	__ind++;
@@ -72,12 +133,25 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
  * if any error occures, it frees the allocated structure
  */
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
-	struct mythread_struct *t = __mythread_fill(fun, args);
+	struct mythread_struct *t; 
+	struct active_thread_node *newthread;
+	superlock_lock();
+	t = __mythread_fill(fun, args);
+	*mythread = __ind;
 	if(t)
 		t->state = THREAD_RUNNING;
-	else
+	else {
+		superlock_unlock();
 		return -1;
+	}
 	makecontext(&(t->thread_context), (void (*)())__mythread_wrapper, 1, __ind);
-	*mythread = __ind;
+	newthread = (struct active_thread_node *)malloc(sizeof(struct active_thread_node));
+	newthread->thread = *mythread;
+	newthread->c = &(t->thread_context);
+	newthread->next = mainthread->next;
+	mainthread->next = newthread;
+	__current++;
+	superlock_unlock();
 	return 0;
 }
+

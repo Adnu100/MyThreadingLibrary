@@ -29,9 +29,16 @@ struct mythread_struct {
 	void *returnval;
 };
 
+struct active_thread_node {
+	mythread_t thread;
+	ucontext_t *c;
+	struct active_thread_node *next;
+};
+
 void __mythread_wrapper(int ind);
 void __mythreadfill(void *(*fun)(void *), void *args);
 
+void mythread_init();
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
 
 #endif

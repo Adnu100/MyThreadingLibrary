@@ -76,17 +76,20 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	struct mythread_struct *t;
 	superlock_lock();
    	t = __mythread_fill(fun, args);
-	if(!t)
+	*mythread = __ind;
+	if(!t) {
+		superlock_unlock();
 		return -1;
+	}
 	t->state = THREAD_RUNNING;
 	status = clone(__mythread_wrapper, (void *)(t->stack + STACK_SIZE), SIGCHLD | CLONE_VM | CLONE_SIGHAND | CLONE_FS | CLONE_FILES, (void *)t);
 	if(status == -1) {
 		__mythread_removelastfilled();
+		superlock_unlock();
 		return -1;
 	}
 	else
 		t->tid = status;
-	*mythread = __ind;
 	superlock_unlock();
 	return 0;
 }
