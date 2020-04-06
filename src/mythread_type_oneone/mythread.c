@@ -211,7 +211,5 @@ int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
  * number EBUSY
  */
 int inline mythread_spin_trylock(mythread_spinlock_t *lock) {
-	if(__sync_lock_test_and_set(lock, 1))
-		return EBUSY;
-	return 0;
+	return __sync_lock_test_and_set(lock, 1) ? EBUSY : 0;
 }

@@ -12,7 +12,7 @@
 static struct mythread_struct **__allthreads[16] = {0};
 static ucontext_t maincontext;
 static int __ind = 0, __current = 0;
-static struct active_thread_node *active = NULL, *mainthread = NULL, *previous = NULL;
+static struct active_thread_node *active = NULL, *mainthread = NULL, *previous = NULL, *last = NULL;
 static volatile int superlock = 0;
 
 static inline void superlock_lock() {
@@ -25,9 +25,7 @@ static inline void superlock_unlock() {
 }
 
 static inline short int superlock_trylock() {
-	if(__sync_lock_test_and_set(&superlock, 1))
-		return 0;
-	return 1;
+	return !__sync_lock_test_and_set(&superlock, 1);
 }
 
 #include <stdio.h>
@@ -46,9 +44,6 @@ void nextthread(int sig) {
 		superlock_unlock();
 		swapcontext(previous->c, active->c);
 	}
-	else {
-		printf("TRYLOCK FAILED\n");
-	}
 }
 
 /* this initialisation function is needed to be called 
@@ -61,10 +56,9 @@ void mythread_init() {
 	active = (struct active_thread_node *)malloc(sizeof(struct active_thread_node));
 	active->thread = 0;
 	active->c = &maincontext;
-	previous = active;
 	active->next = active;
+	last = mainthread = active;
 	__current = 1;
-	mainthread = active;
 	signal(SIGALRM, nextthread);	
 	ualarm(50000, 50000);
 }
@@ -82,15 +76,14 @@ void __mythread_wrapper(int ind) {
 	if(ind >= 0) {
 		superlock_lock();
 		__allthreads[cur][locind]->state = THREAD_TERMINATED;
-		if(__current > 1)
-			__allthreads[cur][locind]->thread_context.uc_link = active->next->c;
-		else
-			__allthreads[cur][locind]->thread_context.uc_link = NULL;
-		if(previous) {
-			free(previous->next);
-			previous->next = active->next;
-			__current--;
-		}
+		if(active->next == mainthread)
+			last = previous;
+		previous->next = active->next;
+		free(active);
+		active = mainthread;
+		previous = last;
+		__current--;
+		active = mainthread;
 		superlock_unlock();
 	}
 }
@@ -120,6 +113,7 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	getcontext(&(__allthreads[cur][locind]->thread_context));
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_sp = malloc(STACK_SIZE);
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_size = STACK_SIZE;
+	__allthreads[cur][locind]->thread_context.uc_link = &maincontext;
 	__allthreads[cur][locind]->returnval = NULL;
 	__allthreads[cur][locind]->state = THREAD_NOT_STARTED;
 	__ind++;
@@ -151,6 +145,8 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	newthread->next = mainthread->next;
 	mainthread->next = newthread;
 	__current++;
+	if(newthread->next == mainthread)
+		last = newthread;
 	superlock_unlock();
 	return 0;
 }
