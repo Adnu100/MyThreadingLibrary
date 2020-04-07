@@ -60,7 +60,6 @@ void mythread_init() {
 	last = mainthread = active;
 	__current = 1;
 	signal(SIGALRM, nextthread);	
-	ualarm(50000, 50000);
 }
 
 /* wrapper function of type void (*f)(int) which is needed to be type
@@ -83,6 +82,8 @@ void __mythread_wrapper(int ind) {
 		active = mainthread;
 		previous = last;
 		__current--;
+		if(__current == 1)
+			ualarm(0, 0);
 		active = mainthread;
 		superlock_unlock();
 	}
@@ -129,6 +130,8 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	struct mythread_struct *t; 
 	struct active_thread_node *newthread;
+	if(__current == 1)
+		ualarm(50000, 50000);
 	superlock_lock();
 	t = __mythread_fill(fun, args);
 	*mythread = __ind;
@@ -151,3 +154,83 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	return 0;
 }
 
+/* waits for the thread mythread to complete 
+ * it returns 0 on success and EINVAL on wrong thread_t argument and ESRCH
+ * if the thread with thread id mythread can not be found
+ * if returnval is not NULL, then stores the value returned by thread 
+ * in the location pointed by function which was running by the thread
+ */
+int mythread_join(mythread_t mythread, void **returnval) {
+	int cur, locind, status = EINVAL;
+	mythread--;
+	cur = mythread / 16;
+	locind = mythread % 16;
+	superlock_lock();
+	if(mythread < __ind) {
+		switch(__allthreads[cur][locind]->state) {
+			case THREAD_RUNNING:
+				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
+				superlock_unlock();
+				while(__allthreads[cur][locind]->state != THREAD_TERMINATED)
+					nextthread(SIGALRM);
+				superlock_lock();
+				__allthreads[cur][locind]->state = THREAD_COLLECTED;
+				superlock_unlock();
+				if(returnval)
+					*returnval = __allthreads[cur][locind]->returnval;
+				status = 0;
+				break;
+			case THREAD_NOT_STARTED:
+			case THREAD_COLLECTED:
+			case THREAD_JOIN_CALLED:
+				superlock_unlock();
+				break;
+			case THREAD_TERMINATED:
+				superlock_unlock();
+				if(returnval)
+					*returnval = __allthreads[cur][locind]->returnval;
+				status = 0;
+				break;
+			default:
+				superlock_unlock();
+				break;
+		}
+	}
+	return status;
+}
+
+/* initialises the mythread_spinlock_t pointed by lock
+ */
+int mythread_spin_init(mythread_spinlock_t *lock) {
+	*lock = 0;
+	return 0;
+}
+
+/* aquires the lock on mythread_spinlock_t pointed by lock, 
+ * if the lock is already held by another thread, then it continuously
+ * loops until lock is freed again
+ */
+int inline mythread_spin_lock(mythread_spinlock_t *lock) {
+	if(*lock != 0 || *lock != 1)
+		return EINVAL;
+	while(__sync_lock_test_and_set(lock, 1));
+	return 0;
+}
+
+/* frees the mythread_spinlock_t pointed by lock
+ */
+int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
+	if(*lock != 1)
+		return EINVAL;
+	__sync_synchronize();
+	*lock = 0;
+	return 0;
+}
+
+/* same as mythread_spin_lock with the difference that if the lock is 
+ * held by some another thread, it returns immediately with the error
+ * number EBUSY
+ */
+int inline mythread_spin_trylock(mythread_spinlock_t *lock) {
+	return __sync_lock_test_and_set(lock, 1) ? EBUSY : 0;
+}

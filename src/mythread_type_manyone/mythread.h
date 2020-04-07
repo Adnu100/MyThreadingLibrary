@@ -19,7 +19,8 @@
 #define THREAD_JOIN_CALLED 0x3
 #define THREAD_COLLECTED 0x4
 
-typedef unsigned long mythread_t;
+typedef unsigned long int mythread_t;
+typedef unsigned short int mythread_spinlock_t;
 
 struct mythread_struct {
 	int state, lock;
@@ -40,5 +41,6 @@ void __mythreadfill(void *(*fun)(void *), void *args);
 
 void mythread_init();
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
+int mythread_join(mythread_t mythread, void **returnval);
 
 #endif

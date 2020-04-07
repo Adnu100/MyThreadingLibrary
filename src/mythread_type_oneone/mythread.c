@@ -106,9 +106,9 @@ int mythread_join(mythread_t mythread, void **returnval) {
 	cur = mythread / 16;
 	locind = mythread % 16;
 	if(mythread < __ind) {
+		superlock_lock();
 		switch(__allthreads[cur][locind]->state) {
 			case THREAD_RUNNING:
-				superlock_lock();
 				__allthreads[cur][locind]->jpid = getpid();
 				__allthreads[cur][locind]->state = THREAD_JOIN_CALLED;
 				superlock_unlock();
@@ -127,14 +127,17 @@ int mythread_join(mythread_t mythread, void **returnval) {
 			case THREAD_NOT_STARTED: 
 			case THREAD_JOIN_CALLED: 
 			case THREAD_COLLECTED:
+				superlock_unlock();
 				status = EINVAL;
 				break;
 			case THREAD_TERMINATED:
+				superlock_unlock();
 				if(returnval) 
 					*returnval = __allthreads[cur][locind]->returnval;
 				status = 0;
 				break;
 			default:
+				superlock_unlock();
 				status = EINVAL;
 				break;
 		}
@@ -189,7 +192,7 @@ int mythread_spin_init(mythread_spinlock_t *lock) {
  * if the lock is already held by another thread, then it continuously
  * loops until lock is freed again
  */
-int inline mythread_spin_lock(mythread_spinlock_t *lock) {
+inline int mythread_spin_lock(mythread_spinlock_t *lock) {
 	if(*lock != 0 || *lock != 1)
 		return EINVAL;
 	while(__sync_lock_test_and_set(lock, 1));
@@ -198,7 +201,7 @@ int inline mythread_spin_lock(mythread_spinlock_t *lock) {
 
 /* frees the mythread_spinlock_t pointed by lock
  */
-int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
+inline int mythread_spin_unlock(mythread_spinlock_t *lock) {
 	if(*lock != 1)
 		return EINVAL;
 	__sync_synchronize();
@@ -210,6 +213,6 @@ int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
  * held by some another thread, it returns immediately with the error
  * number EBUSY
  */
-int inline mythread_spin_trylock(mythread_spinlock_t *lock) {
+inline int mythread_spin_trylock(mythread_spinlock_t *lock) {
 	return __sync_lock_test_and_set(lock, 1) ? EBUSY : 0;
 }
