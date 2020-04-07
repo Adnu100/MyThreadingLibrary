@@ -28,11 +28,6 @@ static inline short int superlock_trylock() {
 	return !__sync_lock_test_and_set(&superlock, 1);
 }
 
-#include <stdio.h>
-void putactive() {
-	printf("active: %ld, %ld, %ld %ld\n", active->thread, active->next->thread, active->next->next->thread, active->next->next->next->thread);
-}
-
 /* this function will be invoked after every alarm sent to program
  * this changes the current context between active thread and the 
  * thread next to it
@@ -41,8 +36,8 @@ void nextthread(int sig) {
 	if(sig == SIGALRM && __current > 1 && superlock_trylock()) {
 		previous = active;
 		active = active->next;
-		superlock_unlock();
 		swapcontext(previous->c, active->c);
+		superlock_unlock();
 	}
 }
 
@@ -69,8 +64,11 @@ void mythread_init() {
  * value in the mythread_struct
  */
 void __mythread_wrapper(int ind) {
+	int cur, locind;
 	ind--;
-	int cur = ind / 16, locind = ind % 16;
+	cur = ind / 16;
+	locind = ind % 16;
+	superlock_unlock();
 	__allthreads[cur][locind]->returnval = __allthreads[cur][locind]->fun(__allthreads[cur][locind]->args);
 	if(ind >= 0) {
 		superlock_lock();
@@ -84,7 +82,6 @@ void __mythread_wrapper(int ind) {
 		__current--;
 		if(__current == 1)
 			ualarm(0, 0);
-		active = mainthread;
 		superlock_unlock();
 	}
 }
@@ -199,9 +196,36 @@ int mythread_join(mythread_t mythread, void **returnval) {
 	return status;
 }
 
+/* when called, the calling thread exits, if returnval is not 
+ * NULL, then the value returned by thread is stored in the 
+ * location pointed by returnval
+ */
+void mythread_exit(void *returnval) {	
+	int ind = active->thread - 1;
+	int cur = ind / 16, locind = ind % 16;
+	ucontext_t *thiscontext;
+	if(ind >= 0) {
+		superlock_lock();
+		thiscontext = active->c;
+		__allthreads[cur][locind]->state = THREAD_TERMINATED;
+		__allthreads[cur][locind]->returnval = returnval;
+		if(active->next == mainthread)
+			last = previous;
+		previous->next = active->next;
+		free(active);
+		active = mainthread;
+		previous = last;
+		__current--;
+		if(__current == 1)
+			ualarm(0, 0);
+		swapcontext(thiscontext, &maincontext);
+		superlock_unlock();
+	}
+}
+
 /* initialises the mythread_spinlock_t pointed by lock
  */
-int mythread_spin_init(mythread_spinlock_t *lock) {
+inline int mythread_spin_init(mythread_spinlock_t *lock) {
 	*lock = 0;
 	return 0;
 }
@@ -210,7 +234,7 @@ int mythread_spin_init(mythread_spinlock_t *lock) {
  * if the lock is already held by another thread, then it continuously
  * loops until lock is freed again
  */
-int inline mythread_spin_lock(mythread_spinlock_t *lock) {
+inline int mythread_spin_lock(mythread_spinlock_t *lock) {
 	if(*lock != 0 || *lock != 1)
 		return EINVAL;
 	while(__sync_lock_test_and_set(lock, 1));
@@ -219,7 +243,7 @@ int inline mythread_spin_lock(mythread_spinlock_t *lock) {
 
 /* frees the mythread_spinlock_t pointed by lock
  */
-int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
+inline int mythread_spin_unlock(mythread_spinlock_t *lock) {
 	if(*lock != 1)
 		return EINVAL;
 	__sync_synchronize();
@@ -231,6 +255,6 @@ int inline mythread_spin_unlock(mythread_spinlock_t *lock) {
  * held by some another thread, it returns immediately with the error
  * number EBUSY
  */
-int inline mythread_spin_trylock(mythread_spinlock_t *lock) {
+inline int mythread_spin_trylock(mythread_spinlock_t *lock) {
 	return __sync_lock_test_and_set(lock, 1) ? EBUSY : 0;
 }
