@@ -28,15 +28,45 @@ static inline short int superlock_trylock() {
 	return !__sync_lock_test_and_set(&superlock, 1);
 }
 
+static void addsignal(pending_signals_queue *q, int sig) {
+	if(q->head) {
+		q->tail->next = (struct pending_signal_node *)malloc(sizeof(struct pending_signal_node));
+		q->tail->next->sig = sig;
+		q->tail->next->next = NULL;
+		q->tail = q->tail->next;
+	}
+	else {
+		q->head = q->tail = (struct pending_signal_node *)malloc(sizeof(struct pending_signal_node));
+		q->head->sig = sig;
+		q->head->next = NULL;
+	}
+}
+
+static void handle_pending_signals() {
+	int thread, cur, locind;
+	thread = active->thread - 1;
+	cur = thread / 16;
+	locind = thread % 16;
+	struct pending_signal_node *node = __allthreads[cur][locind]->pending_signals.head, *previous;
+	while(node) {
+		raise(node->sig);
+		previous = node;
+		node = node->next;
+		free(previous);
+	}
+	__allthreads[cur][locind]->pending_signals.head = __allthreads[cur][locind]->pending_signals.tail = NULL;
+}
+
 /* this function will be invoked after every alarm sent to program
  * this changes the current context between active thread and the 
  * thread next to it
  */
-void nextthread(int sig) {
+static void nextthread(int sig) {
 	if(sig == SIGALRM && __current > 1 && superlock_trylock()) {
 		previous = active;
 		active = active->next;
 		swapcontext(previous->c, active->c);
+		handle_pending_signals();
 		superlock_unlock();
 	}
 }
@@ -114,6 +144,7 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	__allthreads[cur][locind]->thread_context.uc_link = &maincontext;
 	__allthreads[cur][locind]->returnval = NULL;
 	__allthreads[cur][locind]->state = THREAD_NOT_STARTED;
+	__allthreads[cur][locind]->pending_signals.head = __allthreads[cur][locind]->pending_signals.tail = NULL;
 	__ind++;
 	return __allthreads[cur][locind];
 }
@@ -194,6 +225,25 @@ int mythread_join(mythread_t mythread, void **returnval) {
 		}
 	}
 	return status;
+}
+
+/* sends signal sig to the thread represented by
+ * mythread_t mythread
+ * the signal is stored in the thread's pending signals 
+ * queue which will be later processed when the thread is running
+ * the scheduler will check if the queue is empty of not, if not empty
+ * each signal in queue will be processed in the order in which 
+ * it was received
+ */
+int mythread_kill(mythread_t mythread, int sig) {
+	int cur, locind;
+	mythread--;
+	cur = mythread / 16;
+	locind = mythread % 16;
+	superlock_lock();
+	addsignal(&(__allthreads[cur][locind]->pending_signals), sig);
+	superlock_unlock();
+	return 0;
 }
 
 /* when called, the calling thread exits, if returnval is not 

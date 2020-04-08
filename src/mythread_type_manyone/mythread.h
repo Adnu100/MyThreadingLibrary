@@ -22,12 +22,22 @@
 typedef unsigned long int mythread_t;
 typedef unsigned short int mythread_spinlock_t;
 
+struct pending_signal_node {	
+	int sig;
+	struct pending_signal_node *next;
+};
+
+typedef struct pending_signals_queue {
+	struct pending_signal_node *head, *tail;
+} pending_signals_queue;
+
 struct mythread_struct {
 	int state, lock;
-	ucontext_t thread_context;
 	void *(*fun)(void *);
 	void *args;
 	void *returnval;
+	ucontext_t thread_context;
+	pending_signals_queue pending_signals;
 };
 
 struct active_thread_node {
