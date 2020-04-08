@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #endif
 
+#include <string.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <errno.h>
@@ -14,6 +15,7 @@ static ucontext_t maincontext;
 static int __ind = 0, __current = 0;
 static struct active_thread_node *active = NULL, *mainthread = NULL, *previous = NULL, *last = NULL;
 static volatile int superlock = 0;
+static sighandler_t def_sig_handlers[32], mainthread_sig_handlers[32], sigdfls[32];
 
 static inline void superlock_lock() {
 	while(__sync_lock_test_and_set(&superlock, 1));
@@ -40,6 +42,33 @@ static void addsignal(pending_signals_queue *q, int sig) {
 		q->head->sig = sig;
 		q->head->next = NULL;
 	}
+}
+
+static void common_signal_handler(int sig) {
+
+}
+
+sighandler_t set_active_thread_signal(int signum, sighandler_t handler) {
+	sighandler_t *f, dflt;
+	int cur, locind, thread;
+	if(signum >= 32) 
+		return SIG_ERR;
+	superlock_lock();
+	if(active->thread == 0) 
+		f = mainthread_sig_handlers;
+	else {
+		thread = active->thread - 1;
+		cur = thread / 16;
+		locind = thread % 16;
+		f = __allthreads[cur][locind]->handlers;
+	}
+	if(f[signum] == SIG_DFL || f[signum] == SIG_IGN) 
+		dflt = sigdfls[signum] = signal(signum, common_signal_handler);
+	else
+		dflt = f[signum];
+	f[signum] = handler;
+	superlock_unlock();	
+	return dflt;
 }
 
 static void handle_pending_signals() {
@@ -78,12 +107,15 @@ static void nextthread(int sig) {
  * alarm by ualarm()
  */
 void mythread_init() {
+	int i;
 	active = (struct active_thread_node *)malloc(sizeof(struct active_thread_node));
 	active->thread = 0;
 	active->c = &maincontext;
 	active->next = active;
 	last = mainthread = active;
 	__current = 1;
+	for(i = 0; i < 32; i++) 
+		sigdfls[i] = def_sig_handlers[i] = mainthread_sig_handlers[i] = SIG_DFL;
 	signal(SIGALRM, nextthread);	
 }
 
@@ -135,10 +167,11 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	int locind = __ind % 16;
 	if(!__allthreads[cur])
 		__allthreads[cur] = (struct mythread_struct **)malloc(sizeof(struct mythread_struct *) * 16);
+	getcontext(&(__allthreads[cur][locind]->thread_context));
+	memcpy(__allthreads[cur][locind]->handlers, def_sig_handlers, sizeof(def_sig_handlers));
 	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
 	__allthreads[cur][locind]->fun = fun;
 	__allthreads[cur][locind]->args = args;
-	getcontext(&(__allthreads[cur][locind]->thread_context));
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_sp = malloc(STACK_SIZE);
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_size = STACK_SIZE;
 	__allthreads[cur][locind]->thread_context.uc_link = &maincontext;

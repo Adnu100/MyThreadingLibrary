@@ -9,6 +9,7 @@
 
 #define MYTHREAD_H
 
+#include <signal.h>
 #include <sys/ucontext.h>
 
 #define STACK_SIZE (1024 * 1024)
@@ -36,6 +37,7 @@ struct mythread_struct {
 	void *(*fun)(void *);
 	void *args;
 	void *returnval;
+	sighandler_t handlers[32];
 	ucontext_t thread_context;
 	pending_signals_queue pending_signals;
 };
@@ -46,12 +48,17 @@ struct active_thread_node {
 	struct active_thread_node *next;
 };
 
+sighandler_t set_active_thread_signal(int signum, sighandler_t handler);
+
+#define signal(a, b) (set_active_thread_signal(a, b))
+
 void __mythread_wrapper(int ind);
 void __mythreadfill(void *(*fun)(void *), void *args);
 
 void mythread_init();
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
 int mythread_join(mythread_t mythread, void **returnval);
+int mythread_kill(mythread_t mythread, int sig);
 void mythread_exit(void *returnval);
 int mythread_spin_init(mythread_spinlock_t *lock);
 int mythread_spin_lock(mythread_spinlock_t *lock);

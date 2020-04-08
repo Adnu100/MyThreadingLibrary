@@ -42,9 +42,9 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
 int mythread_join(mythread_t mythread, void **returnval);
 int mythread_kill(mythread_t mythread, int sig);
 void mythread_exit(void *returnval);
-inline int mythread_spin_init(mythread_spinlock_t *lock);
-inline int mythread_spin_lock(mythread_spinlock_t *lock);
-inline int mythread_spin_unlock(mythread_spinlock_t *lock);
-inline int mythread_spin_trylock(mythread_spinlock_t *lock);
+int mythread_spin_init(mythread_spinlock_t *lock);
+int mythread_spin_lock(mythread_spinlock_t *lock);
+int mythread_spin_unlock(mythread_spinlock_t *lock);
+int mythread_spin_trylock(mythread_spinlock_t *lock);
 
 #endif
