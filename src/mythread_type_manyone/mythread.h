@@ -21,7 +21,7 @@
 #define THREAD_COLLECTED 0x4
 
 typedef unsigned long int mythread_t;
-typedef unsigned short int mythread_spinlock_t;
+typedef volatile unsigned short int mythread_spinlock_t;
 
 struct pending_signal_node {	
 	int sig;
@@ -37,7 +37,7 @@ struct mythread_struct {
 	void *(*fun)(void *);
 	void *args;
 	void *returnval;
-	sighandler_t handlers[32];
+	__sighandler_t handlers[32];
 	ucontext_t thread_context;
 	pending_signals_queue pending_signals;
 };
@@ -48,10 +48,6 @@ struct active_thread_node {
 	struct active_thread_node *next;
 };
 
-sighandler_t set_active_thread_signal(int signum, sighandler_t handler);
-
-#define signal(a, b) (set_active_thread_signal(a, b))
-
 void __mythread_wrapper(int ind);
 void __mythreadfill(void *(*fun)(void *), void *args);
 
@@ -60,6 +56,7 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
 int mythread_join(mythread_t mythread, void **returnval);
 int mythread_kill(mythread_t mythread, int sig);
 void mythread_exit(void *returnval);
+__sighandler_t set_active_thread_signal(int signum, __sighandler_t handler);
 int mythread_spin_init(mythread_spinlock_t *lock);
 int mythread_spin_lock(mythread_spinlock_t *lock);
 int mythread_spin_unlock(mythread_spinlock_t *lock);

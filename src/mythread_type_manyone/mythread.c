@@ -45,7 +45,22 @@ static void addsignal(pending_signals_queue *q, int sig) {
 }
 
 static void common_signal_handler(int sig) {
-
+	int thread, cur, locind;
+	thread = active->thread - 1;
+	cur = thread / 16;
+	locind = thread % 16;
+	if(thread == -1) {
+		if(mainthread_sig_handlers[sig] == SIG_DFL)
+			sigdfls[sig](sig);
+		else
+			mainthread_sig_handlers[sig](sig);
+	}
+	else {
+		if(__allthreads[cur][locind]->handlers[sig] == SIG_DFL)
+			sigdfls[sig](sig);
+		else
+			__allthreads[cur][locind]->handlers[sig](sig);
+	}
 }
 
 sighandler_t set_active_thread_signal(int signum, sighandler_t handler) {
@@ -76,7 +91,11 @@ static void handle_pending_signals() {
 	thread = active->thread - 1;
 	cur = thread / 16;
 	locind = thread % 16;
-	struct pending_signal_node *node = __allthreads[cur][locind]->pending_signals.head, *previous;
+	struct pending_signal_node *node, *previous;
+	if(thread == -1)
+		return;
+	else
+		node = __allthreads[cur][locind]->pending_signals.head;
 	while(node) {
 		raise(node->sig);
 		previous = node;
@@ -131,6 +150,7 @@ void __mythread_wrapper(int ind) {
 	cur = ind / 16;
 	locind = ind % 16;
 	superlock_unlock();
+	set_active_thread_signal(SIGALRM, nextthread);
 	__allthreads[cur][locind]->returnval = __allthreads[cur][locind]->fun(__allthreads[cur][locind]->args);
 	if(ind >= 0) {
 		superlock_lock();
@@ -167,9 +187,9 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args) {
 	int locind = __ind % 16;
 	if(!__allthreads[cur])
 		__allthreads[cur] = (struct mythread_struct **)malloc(sizeof(struct mythread_struct *) * 16);
+	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
 	getcontext(&(__allthreads[cur][locind]->thread_context));
 	memcpy(__allthreads[cur][locind]->handlers, def_sig_handlers, sizeof(def_sig_handlers));
-	__allthreads[cur][locind] = (struct mythread_struct *)malloc(sizeof(struct mythread_struct));
 	__allthreads[cur][locind]->fun = fun;
 	__allthreads[cur][locind]->args = args;
 	__allthreads[cur][locind]->thread_context.uc_stack.ss_sp = malloc(STACK_SIZE);
