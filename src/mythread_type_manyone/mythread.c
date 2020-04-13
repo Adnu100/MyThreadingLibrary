@@ -10,26 +10,43 @@
 #include <ucontext.h>
 #include "mythread.h"
 
+/* a 2d array of pointers which will store addresses of all malloced 
+ * thread structures during creating of threads
+ */
 static struct mythread_struct **__allthreads[16] = {0};
-static ucontext_t maincontext;
-static int __ind = 0, __current = 0;
+static ucontext_t maincontext;				//context of main thread (main function)
+static int __ind = 0, __current = 0;		//counter of total threads and index of current thread in the 2d array
 static struct active_thread_node *active = NULL, *mainthread = NULL, *previous = NULL, *last = NULL;
-static volatile int superlock = 0;
+											//pointers to main thread active node, thread node currently in action
+											//thread previously in action (to change pointers), the last thread in the list
+static volatile int superlock = 0;			//a superlock for locking during changing some delicate data structures (used internally)
 static sighandler_t def_sig_handlers[32], mainthread_sig_handlers[32], sigdfls[32];
+											//there 32 signals defined as per GNU, so these pointers will store
+											//pointers to default handlers, handlers set by main thread etc
 
+/* a static lock which will only be used internally by thread functions
+ * this function locks the lock
+ */
 static inline void superlock_lock() {
 	while(__sync_lock_test_and_set(&superlock, 1));
 }
 
+/* unlocks the static superlock 
+ */
 static inline void superlock_unlock() {
 	__sync_synchronize();
 	superlock = 0;
 }
 
+/* similar like pthread_spin_trylock
+ */
 static inline short int superlock_trylock() {
 	return !__sync_lock_test_and_set(&superlock, 1);
 }
 
+/* adds a signal to a pending signal queue by creating a node containing
+ * signal number of the signal and adding it to the queue at the end
+ */
 static void addsignal(pending_signals_queue *q, int sig) {
 	if(q->head) {
 		q->tail->next = (struct pending_signal_node *)malloc(sizeof(struct pending_signal_node));
@@ -44,6 +61,13 @@ static void addsignal(pending_signals_queue *q, int sig) {
 	}
 }
 
+/* a common signal handlers which will be activated when a 
+ * signal occures and then it intelligently determines which thread is 
+ * currently in action and activates the signal handler set by that 
+ * thread 
+ * if that thread later set its handler for a certain signal as SIG_DFL
+ * then it also activates the default signal handler for that signal
+ */
 static void common_signal_handler(int sig) {
 	int thread, cur, locind;
 	thread = active->thread - 1;
@@ -63,6 +87,11 @@ static void common_signal_handler(int sig) {
 	}
 }
 
+/* the program using this library for multi threading should call
+ * this function instead of default function 'signal'. This is essential
+ * to set proper adjustments so that the signal handler is set only for
+ * that thread and not for all program
+ */
 sighandler_t set_active_thread_signal(int signum, sighandler_t handler) {
 	sighandler_t *f, dflt;
 	int cur, locind, thread;
@@ -86,6 +115,12 @@ sighandler_t set_active_thread_signal(int signum, sighandler_t handler) {
 	return dflt;
 }
 
+/* this function when called determines the active thread and then 
+ * checks if there are any pending signals to that thread by checking 
+ * data structures (pending_signals_queue) and finally raises those
+ * signals so that any handler (set manually or default) will get 
+ * activated
+ */
 static void handle_pending_signals() {
 	int thread, cur, locind;
 	thread = active->thread - 1;

@@ -10,14 +10,32 @@
 #include <sys/wait.h>
 #include "mythread.h"
 
+/* all threads will be malloced and addresses stored in pointers in this 2d array 
+ * of thread pointers __allthreads and even after this thread terminates, these pointers
+ * will NOT be freed, because anyone can call join on these threads, also can use functions
+ * on these threads or order for returned value from these threads, so it is better to keep 
+ * all this information like state of thread, return value etc
+ */
 static struct mythread_struct **__allthreads[16] = {0};
+
+/* it keeps track of a count of threads created until now
+ */
 static int __ind = 0;
+
+/* a superlock variable which is used to lock and unlock (spinlock)
+ * internally in thread structures (while modifying data structures)
+ */
 static volatile int superlock = 0;
 
+/* a static lock which will only be used internally by thread functions
+ * this function locks the lock
+ */
 static inline void superlock_lock() {
 	while(__sync_lock_test_and_set(&superlock, 1));
 }
 
+/* unlocks the static superlock 
+ */
 static inline void superlock_unlock() {
 	__sync_synchronize();
 	superlock = 0;
