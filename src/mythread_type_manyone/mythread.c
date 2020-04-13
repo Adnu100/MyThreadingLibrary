@@ -150,7 +150,7 @@ void __mythread_wrapper(int ind) {
 	cur = ind / 16;
 	locind = ind % 16;
 	superlock_unlock();
-	set_active_thread_signal(SIGALRM, nextthread);
+	//set_active_thread_signal(SIGALRM, nextthread);
 	__allthreads[cur][locind]->returnval = __allthreads[cur][locind]->fun(__allthreads[cur][locind]->args);
 	if(ind >= 0) {
 		superlock_lock();
