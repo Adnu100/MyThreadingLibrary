@@ -2,6 +2,7 @@
  * this is a testing program which calculates the multiplication
  * of two matrices by creating 3 threads which calculate the multiplication
  * by dividing rows in between them
+ * use the mat.txt, bigmat.txt verybigmat.txt files for bigger matrix inputs
  */
 
 #include <stdio.h>
