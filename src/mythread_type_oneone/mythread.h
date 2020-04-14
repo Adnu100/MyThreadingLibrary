@@ -65,6 +65,7 @@ struct mythread_struct *__mythread_fill(void *(*fun)(void *), void *args);
  * still, the functions mythread_xyz are similar in functioning 
  * to pthread_xyz
  */
+void mythread_init(void);
 int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args);
 int mythread_join(mythread_t mythread, void **returnval);
 int mythread_kill(mythread_t mythread, int sig);
