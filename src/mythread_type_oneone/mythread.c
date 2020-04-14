@@ -41,6 +41,14 @@ static inline void superlock_unlock() {
 	superlock = 0;
 }
 
+void mythread_init() {
+	/*
+	 * no need to initialise anything in one-one model, just created
+	 * empty function so that same testing code can be used with many-one
+	 * and one-one model
+	 */
+}
+
 /* wrapper function of type int (*f)(void *) which wraps the function
  * of type void *(*f)(void *) in it so that it can be passed to 
  * clone() call.
