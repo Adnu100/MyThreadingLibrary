@@ -112,6 +112,27 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	return 0;
 }
 
+/* returns ID of the calling thread, if there are no threads created, 
+ * then it returns -1
+ * if the thread calling it is main thread, then it returns 0
+ */
+mythread_t mythread_self(void) {
+	pid_t pid = getpid();
+	int ind, i, cur, locind;
+	superlock_lock();
+	ind = __ind;
+	superlock_unlock();
+	if(__ind == 0)
+		return -1;
+	for(i = 0; i < ind; i++) {
+		cur = ind / 16;
+		locind = ind % 16;
+		if(pid == __allthreads[cur][locind]->tid)
+			return i + 1;
+	}
+	return 0;
+}
+
 /* waits for the thread mythread to complete 
  * it returns 0 on success and EINVAL on wrong thread_t argument and ESRCH
  * if the thread with thread id mythread can not be found

@@ -270,6 +270,20 @@ int mythread_create(mythread_t *mythread, void *(*fun)(void *), void *args) {
 	return 0;
 }
 
+/* returns ID of the calling thread, if mythread_init is not called, then 
+ * it returns -1
+ * if the thread calling it is main thread, then it returns 0
+ */
+mythread_t mythread_self(void) {
+	mythread_t t;
+	superlock_lock();
+	if(active)
+		t = active->thread;
+	else t = -1;
+	superlock_unlock();
+	return t;
+}
+
 /* waits for the thread mythread to complete 
  * it returns 0 on success and EINVAL on wrong thread_t argument and ESRCH
  * if the thread with thread id mythread can not be found

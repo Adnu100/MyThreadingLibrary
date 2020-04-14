@@ -99,6 +99,7 @@ int mythread_join(mythread_t mythread, void **returnval);
 int mythread_kill(mythread_t mythread, int sig);
 void mythread_exit(void *returnval);
 __sighandler_t set_active_thread_signal(int signum, __sighandler_t handler);
+mythread_t mythread_self(void);
 int mythread_spin_init(mythread_spinlock_t *lock);
 int mythread_spin_lock(mythread_spinlock_t *lock);
 int mythread_spin_unlock(mythread_spinlock_t *lock);
