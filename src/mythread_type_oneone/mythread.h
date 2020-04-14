@@ -8,6 +8,7 @@
 #ifndef MYTHREAD_H
 
 #define MYTHREAD_H
+#define MYTHREAD_ONE_ONE
 
 #include <setjmp.h>
 #include <bits/types.h>

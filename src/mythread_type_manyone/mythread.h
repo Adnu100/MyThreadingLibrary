@@ -8,6 +8,7 @@
 #ifndef MYTHREAD_H
 
 #define MYTHREAD_H
+#define MYTHREAD_MANY_ONE
 
 #include <signal.h>
 #include <sys/ucontext.h>
